@@ -1,5 +1,20 @@
 # Load packages
 library(tidyverse)
+library(ggplot2)
+library(survival)
+library(tableone)
+# install.packages("psych")  
+library("psych")
+# install.packages("ggplot2")
+library(ggplot2)
+# install.packages("rcompanion")
+library("rcompanion")
+# install.packages("DescTools")  
+library("DescTools")
+library("Publish")
+# install.packages("ggpubr")
+# install.packages("haven")
+library("ggpubr")
 
 setwd("~/Documents/bstats/Parasite_Density")
 
@@ -28,7 +43,7 @@ lab_file_2018[lab_file_2018$barcode == "T9A4H", ]$Species <- "PF,PM"
 lab_file_2018[lab_file_2018$barcode == "U5R6X", ]$Species <- "PF,PM"
 lab_file_2018[lab_file_2018$barcode == "Q7J5M", ]$Species <- "PF,PO"
 lab_file_2018$Species <- na_if(lab_file_2018$Species, "N/A")
-lab_file_2018[which(lab_file_2018$`barcode` == "W7Q5Z"), ] # Need to remove T
+
 
 # Altering the class of a variable 
 DHS_2018$barcode <- as.character(DHS_2018$barcode)
@@ -73,3 +88,84 @@ df_2018[df_2018$barcode == "P0O3H", ]$final_sexual <- 0
 df_2018[df_2018$barcode == "S0K9M", ]$final_sexual <- 0
 df_2018[df_2018$barcode == "U0R4Q", ]$final_sexual <- 0
 df_2018[df_2018$barcode == "U6B2E", ]$final_sexual <- 0
+# Change two observations with species recorded as T
+df_2018$species <- na_if(df_2018$species, "T")
+
+# Removing observations that are positive for asexual parasite or sexual but the DHS file is negative AND observations that are positive in DHS file but negative in lab file for both asexual/sexual
+df_2018 <- df_2018 %>% filter(
+  !((smear_result == 0 & final_asexual > 0 | smear_result == 0 & final_sexual > 0) |
+    (smear_result == 0 & final_asexual > 0 & !smear_result == 0 & final_sexual > 0)),
+  !(smear_result == 1 & (final_asexual == 0 & final_sexual == 0))
+)
+
+# Checking class of variables and changing class
+str(df_2018)
+df_2018 <- df_2018 %>% mutate(
+  age_bands = as.numeric(age_bands)
+) 
+
+# Baseline characteristics 
+myVars <- c("geo_zone", "age_bands", "sex", "species")
+catVars <- c("geo_zone", "age_bands", "sex", "species")
+tab2 <- CreateTableOne(vars = myVars, data = df_2018, factorVars = catVars)
+tab2
+print(tab2, showAllLevels = TRUE, formatOptions = list(big.mark = ","))
+summary(tab2)
+
+# Selecting only positive and only negative individuals
+only_positive <- df_2018 %>% filter(
+  smear_result == 1
+)
+only_negative <- df_2018 %>% filter(
+  smear_result == 0
+)
+
+# Creating asexual_nozero, sexual_nozero, asexual_grp, asexual_grp_nozero variables
+df_2018 <- df_2018 %>% mutate(
+  asexual_nozero = na_if(df_2018$final_asexual, 0),
+  sexual_nozero = na_if(df_2018$final_sexual, 0),
+  asexual_grp = case_when(final_asexual == 0 ~ 0,
+                          final_asexual >= 1 & final_asexual < 999 ~ 1,
+                          final_asexual >= 1000 & final_asexual < 9999 ~ 2,
+                          final_asexual >= 10000 & final_asexual < 1000000000 ~ 3),
+  asexual_grp_nozero = case_when(asexual_nozero >= 1 & asexual_nozero < 999 ~ 1,
+                                 asexual_nozero >= 1000 & asexual_nozero < 9999 ~ 2,
+                                 asexual_nozero >= 10000 & asexual_nozero < 1000000000 ~ 3),
+  asexual_prev = case_when(final_asexual == 0 ~ 0,
+                           final_asexual >= 1 ~ 1),
+  sexual_prev = case_when(final_sexual == 0 ~ 0,
+                          final_sexual >= 1 ~ 1)
+)
+
+
+
+# Geometric mean for each geo_zone
+zone_gmean_2018 <- ci.mean (asexual_nozero~geo_zone, data=df_2018, statistic = "geometric", na.rm=TRUE)
+# Plotting the above results
+zone_data_2018 <- as.data.frame(zone_gmean_2018)
+(zone <- ggplot(zone_data_2018) +
+  geom_bar( aes(x=geo_zone, y=geomean), stat="identity", fill="skyblue", alpha=0.7) +
+  geom_errorbar( aes(x=geo_zone, ymin=lower, ymax=upper), width=0.4, colour="orange", alpha=0.9, size=1.3)  + 
+  labs( x = "Geopolitical zone", y = "Geometric mean asexual parasite density (parasites/μL)") +
+  theme_classic())
+# Kruskal-Wallis test
+kruskal.test(asexual_nozero ~ geo_zone, data = df_2018)
+# Pairwise comparisons with adjustment for multiple comparisons
+pairwise.wilcox.test(df_2018$asexual_nozero, df_2018$geo_zone, p.adjust.method = "BH")
+
+# Geometric mean for each age group
+age_gmean_2018 <- ci.mean (asexual_nozero~age_bands, 
+                           data=df_2018, statistic = "geometric", na.rm=TRUE)
+# Plotting this data
+age_data_2018 <- as.data.frame(age_gmean_2018)
+(age <- ggplot(age_data_2018) +
+  geom_bar( aes(x=age_bands, y=geomean), stat="identity", fill="skyblue", alpha=0.7) +
+  geom_errorbar( aes(x=age_bands, ymin=lower, ymax=upper), width=0.4, colour="orange", alpha=0.9, size=1.3)  + 
+  labs( x = "Age (years)", y = "Geometric mean asexual parasite density (parasites/μL)") +
+  theme_classic())
+# Kruskal-Wallis test
+kruskal.test(asexual_nozero ~ geo_zone, data = df_2018)
+# Pairwise comparisons using an adjustment for multiple comparisons
+pairwise.wilcox.test(df_2018$asexual_nozero, df_2018$age_bands, p.adjust.method = "BH")
+
+
