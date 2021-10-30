@@ -176,6 +176,10 @@ df_2018 %>% tabyl(age_bands, asexual_grp) %>%
   adorn_percentages() %>% 
   adorn_pct_formatting(digits = 1) %>% 
   adorn_ns()
+df_2018 %>% tabyl(age_bands, asexual_grp_nozero, show_missing_levels = F, show_na = FALSE) %>%
+  adorn_percentages() %>% 
+  adorn_pct_formatting(digits = 1) %>% 
+  adorn_ns()
 
 
 # Geometric mean for each geo_zone
@@ -214,14 +218,17 @@ df_2018 <- df_2018 %>% mutate(
 )
 # Getting the parasite density and prevalence for each state
 state_prev <- df_2018 %>% tabyl(state_FCTremoved, asexual_prev) %>%
-  adorn_percentages() 
+  adorn_percentages()
 state_prev <- as.data.frame(state_prev)
-state_prev <- state_prev %>% rename(state = 1, drop = 2, Asexual_prev=3)
-
-
-
+state_prev <- state_prev %>% rename(state = 1, drop = 2, Asexual_prev = 3)
+state_density <- as.data.frame(
+  ci.mean (asexual_nozero~state_FCTremoved, data=df_2018, statistic = "geometric", na.rm=TRUE))
+state_density <- state_density %>% rename(Asexual_density = 1, lower_95_CI_density = 3, upper_95_CI_density  = 4, state = 5)
+state_prev$state <- as.character(state_prev$state)
+prev_density_2018 <- left_join(state_prev, state_density, by = c("state"))
+prev_density_2018 <- prev_density_2018 %>% mutate(Asexual_prev = Asexual_prev*100)
 # Plotting parasite density and prevalence with error bars
-ggplot(prev_density_2018_2) +
+ggplot(prev_density_2018) +
   geom_point(aes(x=Asexual_prev, y=Asexual_density)) +
   geom_pointrange(aes(x=Asexual_prev, xmin=lower_95_CI_prev, 
                       xmax=upper_95_CI_prev, y=Asexual_density, 
@@ -231,4 +238,38 @@ ggplot(prev_density_2018_2) +
                      ymin=lower_95_CI_density, ymax=upper_95_CI_density)) +
   labs( y = "Geometric mean asexual parasite density (parasites/μL)", 
         x = "Malaria asexual parasite prevalence (%)")
+
+
+state_10 <- df_2018 %>% filter(
+  state_FCTremoved == 10
+)
+CI(state_10$asexual_prev, ci=0.95)
+CI(df_2018$asexual_prev, ci=0.95)
+con <- df_2018 %>% 
+  group_by (shstate) %>%
+  CI(df_2018$asexual_prev)
+    
+    mutate(
+  CI(df_2018$asexual_prev, ci=0.95)
+)
+    
+#--- Get summary statistics of our choice grouped by region
+df_2018 %>% filter(as.logical(asexual_prev)) %>% 
+      group_by(shstate) %>% 
+      CI(df_2018$asexual_prev, ci=0.95)
+
+ll <- function(x) t.test(x)$conf.int[[1]] # Lower 95% CI of mean
+ul <- function(x) t.test(x)$conf.int[[2]]
+df_2018 %>% select(shstate as) %>% tbl_summary(
+  by = shstate,
+  statistic = 
+)
+
+
+
+
+write.csv(df_2018, file = "df_2018.csv")
+
+
+
 
