@@ -1,3 +1,12 @@
+###### --------- Parasite density --------- ######
+  ###### --------- Vicki Latham --------- ######
+    ###### --------- 6/10/2021 --------- ######
+
+
+
+
+####  -------------------   STAGE 1 : LOADING AND CLEANING  -------------------    ####
+
 # Load packages
 library(tidyverse)
 library(ggplot2)
@@ -15,6 +24,9 @@ library("Publish")
 # install.packages("ggpubr")
 # install.packages("haven")
 library("ggpubr")
+library(pacman)
+p_load(readxl, readr, epitrix, rio, stringr, dplyr, fastLink, janitor, ggplot2, reshape2, knitr, officer, gdtools, tibble, tidyr, tidyverse, lubridate, forcats, epitools, rlist, flextable, naniar)
+p_loaded()
 
 setwd("~/Documents/bstats/Parasite_Density")
 
@@ -22,6 +34,7 @@ setwd("~/Documents/bstats/Parasite_Density")
 lab_file_2018 <- read_excel("data/Lab_file_2018.xlsx")
 DHS_2018 <- read_dta("data/NGPR7AFL.DTA")
 
+# Data cleaning 
 names(DHS_2018)
 DHS_2018 <- rename(DHS_2018, barcode = hml34)
 names(lab_file_2018)
@@ -104,13 +117,10 @@ df_2018 <- df_2018 %>% mutate(
   age_bands = as.numeric(age_bands)
 ) 
 
-# Baseline characteristics 
-myVars <- c("geo_zone", "age_bands", "sex", "species")
-catVars <- c("geo_zone", "age_bands", "sex", "species")
-tab2 <- CreateTableOne(vars = myVars, data = df_2018, factorVars = catVars)
-tab2
-print(tab2, showAllLevels = TRUE, formatOptions = list(big.mark = ","))
-summary(tab2)
+
+
+
+####  -------------------   STAGE 2 : SUBSETTING AND CREATING VARIABLES  -------------------    ####
 
 # Selecting only positive and only negative individuals
 only_positive <- df_2018 %>% filter(
@@ -137,6 +147,35 @@ df_2018 <- df_2018 %>% mutate(
                           final_sexual >= 1 ~ 1)
 )
 
+
+####  -------------------   STAGE 3 : ANALYSIS  -------------------    ####
+
+
+# Baseline characteristics 
+myVars <- c("geo_zone", "age_bands", "sex", "species", "sexual_prev", "asexual_prev", "final_asexual" , "asexual_grp_nozero", "asexual_grp")
+catVars <- c("geo_zone", "age_bands", "sex", "species", "sexual_prev", "asexual_prev", "asexual_grp_nozero", "asexual_grp")
+tab2 <- CreateTableOne(vars = myVars, data = df_2018, factorVars = catVars)
+tab2
+print(tab2, showAllLevels = TRUE, formatOptions = list(big.mark = ","))
+summary(tab2)
+df_2018 %>% tabyl(sex)
+summary(df_2018$asexual_nozero)
+
+# Overall geometric mean 
+ci.mean(df_2018$asexual_nozero, statistic="geometric", na.rm=T)
+
+# Geometric mean for each sex
+sex_gmean_2018 <- ci.mean (asexual_nozero~sex, data=df_2018, statistic = "geometric", na.rm=TRUE)
+print(sex_gmean_2018)
+# Mann-Whitney test
+wilcox.test(asexual_nozero ~ sex, data = df_2018)
+
+# Percentage of children of different ages with each level of parasite density
+df_2018 %>% tabyl(age_bands, asexual_grp) %>%
+  adorn_totals() %>%
+  adorn_percentages() %>% 
+  adorn_pct_formatting(digits = 1) %>% 
+  adorn_ns()
 
 
 # Geometric mean for each geo_zone
@@ -168,4 +207,28 @@ kruskal.test(asexual_nozero ~ geo_zone, data = df_2018)
 # Pairwise comparisons using an adjustment for multiple comparisons
 pairwise.wilcox.test(df_2018$asexual_nozero, df_2018$age_bands, p.adjust.method = "BH")
 
+
+# Removing FCT from state analysis 
+df_2018 <- df_2018 %>% mutate(
+  state_FCTremoved = na_if(df_2018$shstate, 140)
+)
+# Getting the parasite density and prevalence for each state
+state_prev <- df_2018 %>% tabyl(state_FCTremoved, asexual_prev) %>%
+  adorn_percentages() 
+state_prev <- as.data.frame(state_prev)
+state_prev <- state_prev %>% rename(state = 1, drop = 2, Asexual_prev=3)
+
+
+
+# Plotting parasite density and prevalence with error bars
+ggplot(prev_density_2018_2) +
+  geom_point(aes(x=Asexual_prev, y=Asexual_density)) +
+  geom_pointrange(aes(x=Asexual_prev, xmin=lower_95_CI_prev, 
+                      xmax=upper_95_CI_prev, y=Asexual_density, 
+                      ymin=lower_95_CI_density, ymax=upper_95_CI_density)) +
+  geom_errorbarh(aes(x=Asexual_prev, xmin=lower_95_CI_prev, 
+                     xmax=upper_95_CI_prev, , y=Asexual_density, 
+                     ymin=lower_95_CI_density, ymax=upper_95_CI_density)) +
+  labs( y = "Geometric mean asexual parasite density (parasites/μL)", 
+        x = "Malaria asexual parasite prevalence (%)")
 
