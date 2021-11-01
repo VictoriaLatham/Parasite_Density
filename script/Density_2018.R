@@ -148,11 +148,11 @@ df_2018 <- df_2018 %>% mutate(
 )
 
 
-####  -------------------   STAGE 3 : ANALYSIS  -------------------    ####
+####  -------------------   STAGE 3 : BASIC ANALYSIS  -------------------    ####
 
 
 # Baseline characteristics 
-myVars <- c("geo_zone", "age_bands", "sex", "species", "sexual_prev", "asexual_prev", "final_asexual" , "asexual_grp_nozero", "asexual_grp")
+myVars <- c("geo_zone", "age_bands", "sex", "species", "sexual_prev", "asexual_prev", "final_asexual" , "asexual_grp_nozero", "asexual_grp", "asexual_nozero", "sexual_nozero")
 catVars <- c("geo_zone", "age_bands", "sex", "species", "sexual_prev", "asexual_prev", "asexual_grp_nozero", "asexual_grp")
 tab2 <- CreateTableOne(vars = myVars, data = df_2018, factorVars = catVars)
 tab2
@@ -181,11 +181,18 @@ df_2018 %>% tabyl(age_bands, asexual_grp_nozero, show_missing_levels = F, show_n
   adorn_pct_formatting(digits = 1) %>% 
   adorn_ns()
 
-
 # Geometric mean for each geo_zone
 zone_gmean_2018 <- ci.mean (asexual_nozero~geo_zone, data=df_2018, statistic = "geometric", na.rm=TRUE)
+print(zone_gmean_2018)
 # Plotting the above results
 zone_data_2018 <- as.data.frame(zone_gmean_2018)
+zone_data_2018 <- zone_data_2018 %>% mutate(
+  geo_zone = case_when(geo_zone == 1 ~ "NC",
+                       geo_zone == 2 ~ "NE",
+                       geo_zone == 3 ~ "NW",
+                       geo_zone == 4 ~ "SE",
+                       geo_zone == 5 ~ "SS",
+                       geo_zone == 6 ~ "SW"))
 (zone <- ggplot(zone_data_2018) +
   geom_bar( aes(x=geo_zone, y=geomean), stat="identity", fill="skyblue", alpha=0.7) +
   geom_errorbar( aes(x=geo_zone, ymin=lower, ymax=upper), width=0.4, colour="orange", alpha=0.9, size=1.3)  + 
@@ -207,26 +214,34 @@ age_data_2018 <- as.data.frame(age_gmean_2018)
   labs( x = "Age (years)", y = "Geometric mean asexual parasite density (parasites/μL)") +
   theme_classic())
 # Kruskal-Wallis test
-kruskal.test(asexual_nozero ~ geo_zone, data = df_2018)
+kruskal.test(asexual_nozero ~ age_bands, data = df_2018)
 # Pairwise comparisons using an adjustment for multiple comparisons
 pairwise.wilcox.test(df_2018$asexual_nozero, df_2018$age_bands, p.adjust.method = "BH")
 
+# Plot age and geo_zone graphs together
+ggarrange(age, zone,
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
 
-# Removing FCT from state analysis 
-df_2018 <- df_2018 %>% mutate(
-  state_FCTremoved = na_if(df_2018$shstate, 140)
+
+####  -------------------   STAGE 4 : MAPS  -------------------    ####
+
+maps <- read.csv("state_density_2018.csv")
+bc <- c(0, 1000, 2000, 3000, 4000, 5000, 6000)
+map_ng(data = maps, x = Asexual_density, breaks = bc, col = 'YlOrRd',
+       categories = c("0-1000 parasites/μL", "1001-2000 parasites/μL", 
+                      "2001-3000 parasites/μL", "3001-4000 parasites/μL", 
+                      "4001-5000 parasites/μL", "5001-6000 parasites/μL"))
+
+
+####  -------------------   STAGE 5 : CORRELATION ANALYSIS  -------------------    ####
+
+# Loading data 
+prev_density_2018 <- read.csv("state_density_prev_2018.csv")
+prev_density_2018 <- prev_density_2018 %>% mutate(
+  lower_95_CI_prev = (lower_95_CI_prev*100),
+  upper_95_CI_prev = (upper_95_CI_prev*100)
 )
-# Getting the parasite density and prevalence for each state
-state_prev <- df_2018 %>% tabyl(state_FCTremoved, asexual_prev) %>%
-  adorn_percentages()
-state_prev <- as.data.frame(state_prev)
-state_prev <- state_prev %>% rename(state = 1, drop = 2, Asexual_prev = 3)
-state_density <- as.data.frame(
-  ci.mean (asexual_nozero~state_FCTremoved, data=df_2018, statistic = "geometric", na.rm=TRUE))
-state_density <- state_density %>% rename(Asexual_density = 1, lower_95_CI_density = 3, upper_95_CI_density  = 4, state = 5)
-state_prev$state <- as.character(state_prev$state)
-prev_density_2018 <- left_join(state_prev, state_density, by = c("state"))
-prev_density_2018 <- prev_density_2018 %>% mutate(Asexual_prev = Asexual_prev*100)
 # Plotting parasite density and prevalence with error bars
 ggplot(prev_density_2018) +
   geom_point(aes(x=Asexual_prev, y=Asexual_density)) +
@@ -237,7 +252,9 @@ ggplot(prev_density_2018) +
                      xmax=upper_95_CI_prev, , y=Asexual_density, 
                      ymin=lower_95_CI_density, ymax=upper_95_CI_density)) +
   labs( y = "Geometric mean asexual parasite density (parasites/μL)", 
-        x = "Malaria asexual parasite prevalence (%)")
+        x = "Malaria asexual parasite prevalence (%)") +
+  theme(axis.title = element_text(face="bold", size=13))
+
 
 
 state_10 <- df_2018 %>% filter(
@@ -266,10 +283,103 @@ df_2018 %>% select(shstate as) %>% tbl_summary(
 )
 
 
+####  -------------------   STAGE 6 : SEXUAL ANALYSIS  -------------------    ####
 
 
+# Sexual prevalence in age groups
+df_2018 %>% tabyl(age_bands, sexual_prev) %>%
+  adorn_totals() %>%
+  adorn_percentages() %>% 
+  adorn_pct_formatting(digits = 1) %>% 
+  adorn_ns()
+# Sexual prevalence in males/females
+df_2018 %>% tabyl(sex, sexual_prev) %>%
+  adorn_totals() %>%
+  adorn_percentages() %>% 
+  adorn_pct_formatting(digits = 1) %>% 
+  adorn_ns()
+# Chi-squared test
+chisq.test(df_2018$sex, df_2018$sexual_prev)
+# Sexual prevalence in geo_zones
+df_2018 %>% tabyl(geo_zone, sexual_prev) %>%
+  adorn_totals() %>%
+  adorn_percentages() %>% 
+  adorn_pct_formatting(digits = 1) %>% 
+  adorn_ns()
+
+# Sexual density overview
+summary(df_2018$sexual_nozero)
+# Overall geometric mean SEXUAL
+ci.mean(df_2018$sexual_nozero, statistic="geometric", na.rm=T)
+
+
+# Geometric mean SEXUAL for each sex
+sex_gmean_2018 <- ci.mean (sexual_nozero~sex, data=df_2018, statistic = "geometric", na.rm=TRUE)
+print(sex_gmean_2018)
+# Mann-Whitney test
+wilcox.test(sexual_nozero ~ sex, data = df_2018)
+
+# Geometric mean SEXUAL for each geo_zone
+zone_gmean_2018 <- ci.mean (sexual_nozero~geo_zone, data=df_2018, statistic = "geometric", na.rm=TRUE)
+print(zone_gmean_2018)
+# Kruskal-Wallis test
+kruskal.test(sexual_nozero ~ geo_zone, data = df_2018)
+# Pairwise comparisons with adjustment for multiple comparisons
+pairwise.wilcox.test(df_2018$sexual_nozero, df_2018$geo_zone, p.adjust.method = "BH")
+
+# Geometric mean SEXUAL for each age group
+age_gmean_2018 <- ci.mean (sexual_nozero ~ age_bands, 
+                           data=df_2018, statistic = "geometric", na.rm=TRUE)
+print(age_gmean_2018)
+# Kruskal-Wallis test
+kruskal.test(sexual_nozero ~ age_bands, data = df_2018)
+# Pairwise comparisons using an adjustment for multiple comparisons
+pairwise.wilcox.test(df_2018$sexual_nozero, df_2018$age_bands, p.adjust.method = "BH")
+
+
+####  -------------------   STAGE 6 : SPECIES ANALYSIS  -------------------    ####
+
+df_2018 %>% tabyl(species, asexual_prev) %>%
+  adorn_totals() %>%
+  adorn_percentages() %>% 
+  adorn_pct_formatting(digits = 1) %>% 
+  adorn_ns()
+df_2018 %>% tabyl(species, sexual_prev) %>%
+  adorn_totals() %>%
+  adorn_percentages() %>% 
+  adorn_pct_formatting(digits = 1) %>% 
+  adorn_ns()
+df_2018 %>% tabyl(species, smear_result) %>%
+  adorn_totals() %>%
+  adorn_percentages() %>% 
+  adorn_pct_formatting(digits = 1) %>% 
+  adorn_ns()
+
+# Geometric mean for each species
+species_gmean_2018 <- ci.mean (asexual_nozero ~ species, 
+                           data=df_2018, statistic = "geometric", na.rm=TRUE)
+print(species_gmean_2018)
+# Kruskal-Wallis test
+kruskal.test(asexual_nozero ~ species, data = df_2018)
+
+
+
+sex_prev_state <- df_2018 %>% tabyl(shstate, sexual_prev) %>%
+  adorn_totals() %>%
+  adorn_percentages() %>% 
+  adorn_pct_formatting(digits = 1)
+asex_prev_state <- df_2018 %>% tabyl(shstate, asexual_prev) %>%
+  adorn_totals() %>%
+  adorn_percentages() %>% 
+  adorn_pct_formatting(digits = 1)
+asex_prev_state <- as.data.frame(asex_prev_state)
+asex_prev_state <- rename(asexul_prev_state, asexual_prev = 2)
+
+state_prev <- state_prev %>% mutate(
+  Asexual_prev = (Asexual_prev*100)
+)
 write.csv(df_2018, file = "df_2018.csv")
-
+write.csv(state_prev, file = "state_prev.csv")
 
 
 
