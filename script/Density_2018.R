@@ -257,19 +257,7 @@ ggplot(prev_density_2018) +
 
 
 
-state_10 <- df_2018 %>% filter(
-  state_FCTremoved == 10
-)
-CI(state_10$asexual_prev, ci=0.95)
-CI(df_2018$asexual_prev, ci=0.95)
-con <- df_2018 %>% 
-  group_by (shstate) %>%
-  CI(df_2018$asexual_prev)
-    
-    mutate(
-  CI(df_2018$asexual_prev, ci=0.95)
-)
-    
+
 #--- Get summary statistics of our choice grouped by region
 df_2018 %>% filter(as.logical(asexual_prev)) %>% 
       group_by(shstate) %>% 
@@ -350,6 +338,11 @@ df_2018 %>% tabyl(species, sexual_prev) %>%
   adorn_pct_formatting(digits = 1) %>% 
   adorn_ns()
 df_2018 %>% tabyl(species, smear_result) %>%
+  adorn_totals() %>%
+  adorn_percentages() %>% 
+  adorn_pct_formatting(digits = 1) %>% 
+  adorn_ns()
+df_2018 %>% tabyl(species, sex) %>%
   adorn_totals() %>%
   adorn_percentages() %>% 
   adorn_pct_formatting(digits = 1) %>% 
